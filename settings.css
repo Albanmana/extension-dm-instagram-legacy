@@ -2,16 +2,24 @@
   min-width: 480px;
   max-width: 580px;
   margin: 0 auto;
+  padding: 24px;
+}
+
+.settings-header {
+  margin-bottom: 22px;
 }
 
 .settings-section {
-  margin-bottom: 28px;
-  padding-bottom: 24px;
-  border-bottom: 1px solid rgba(184, 154, 122, 0.3);
+  margin-bottom: 14px;
+  padding: 16px;
+  border: 1px solid #dde1e7;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(23, 24, 28, 0.04);
 }
 
 .settings-section:last-of-type {
-  border-bottom: none;
+  border-bottom: 1px solid #dde1e7;
 }
 
 .toggle-row {
@@ -26,29 +34,29 @@
 }
 
 .autofetch-status[data-state="active"]   { color: #1e6b43; }
-.autofetch-status[data-state="inactive"] { color: #7a5c3e; }
+.autofetch-status[data-state="inactive"] { color: #596170; }
 
 select {
   font: inherit;
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #b89a7a;
+  border: 1px solid #d2d7df;
   border-radius: 8px;
   padding: 10px 12px;
   padding-right: 32px;
-  background: rgba(255, 252, 248, 0.95) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2354463a' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 12px center;
-  color: #1d1d1f;
+  background: #ffffff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23596170' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E") no-repeat right 12px center;
+  color: #17181c;
   appearance: none;
 }
 
 .header-hint {
   font-size: 12px;
   font-weight: 400;
-  background: rgba(29, 29, 31, 0.08);
+  background: #edf0f4;
   border-radius: 4px;
   padding: 2px 6px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  color: #54463a;
+  color: #596170;
   vertical-align: middle;
 }
 
@@ -62,7 +70,7 @@ select {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 20px;
   letter-spacing: 4px;
-  color: #54463a;
+  color: #596170;
 }
 
 .apikey-actions {

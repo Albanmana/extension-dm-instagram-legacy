@@ -76,9 +76,7 @@ const autofetchToggle   = document.getElementById("autofetch-toggle");
 const autofetchCountdown = document.getElementById("autofetch-countdown");
 const autofetchTrigger  = document.getElementById("autofetch-trigger");
 
-// Step 1: DOM references for batch UI
 const settingsButton    = document.getElementById("settings-button");
-const toggleBatchButton = document.getElementById("toggle-batch-button");
 const batchSection = document.getElementById("batch-section");
 const dropZone = document.getElementById("csv-drop-zone");
 const fileInput = document.getElementById("csv-file-input");
@@ -187,7 +185,7 @@ form.addEventListener("submit", async (event) => {
     });
 
     if (!response?.ok) {
-      setStatus(response?.error || "The test message failed.", "error");
+      setStatus(response?.error || "The message failed.", "error");
       return;
     }
 
@@ -222,13 +220,12 @@ logsButton.addEventListener("click", async () => {
   }
 });
 
-// Step 2: renderBatchProgress
 function renderBatchProgress({ batchQueue, batchStatus, batchLogs }) {
   const total = batchQueue.length;
   const processed = batchLogs.length;
 
   batchProgress.hidden = total === 0;
-  batchSummary.textContent = `${processed} / ${total} processed — status: ${batchStatus ?? "—"}`;
+  batchSummary.textContent = `${processed} / ${total} processed - status: ${batchStatus ?? "idle"}`;
 
   batchLogBody.innerHTML = "";
   for (const entry of batchLogs) {
@@ -241,12 +238,12 @@ function renderBatchProgress({ batchQueue, batchStatus, batchLogs }) {
     if (entry.status === "sent") {
       const span = document.createElement("span");
       span.className = "status-sent";
-      span.textContent = "✓ sent";
+      span.textContent = "sent";
       statusTd.appendChild(span);
     } else {
       const span = document.createElement("span");
       span.className = "status-error";
-      span.textContent = `✗ error: ${entry.error ?? "?"}`;
+      span.textContent = `error: ${entry.error ?? "unknown"}`;
       statusTd.appendChild(span);
     }
 
@@ -259,7 +256,6 @@ function renderBatchProgress({ batchQueue, batchStatus, batchLogs }) {
   submitButton.disabled = batchStatus === "running";
 }
 
-// Step 3: loadBatchStatus — reconnects to in-progress batches on popup open
 async function loadBatchStatus() {
   try {
     const response = await chrome.runtime.sendMessage({ type: "GET_BATCH_STATUS" });
@@ -276,17 +272,10 @@ async function loadBatchStatus() {
 loadBatchStatus();
 loadScrapeStatus();
 
-// Settings button → opens settings.html in a new tab
 settingsButton.addEventListener("click", () => {
   chrome.tabs.create({ url: chrome.runtime.getURL("settings.html") });
 });
 
-// Step 4: Wire toggle button
-toggleBatchButton.addEventListener("click", () => {
-  batchSection.hidden = !batchSection.hidden;
-});
-
-// Step 5: Wire drag-and-drop and file input
 dropZone.addEventListener("click", () => fileInput.click());
 dropZone.addEventListener("keydown", (e) => {
   if (e.key === "Enter" || e.key === " ") fileInput.click();
@@ -311,7 +300,6 @@ fileInput.addEventListener("change", () => {
   if (file) handleCSVFile(file);
 });
 
-// Step 6: handleCSVFile
 let parsedRows = [];
 
 function handleCSVFile(file) {
@@ -337,10 +325,10 @@ function handleCSVFile(file) {
       const handleTd = document.createElement("td");
       handleTd.textContent = `@${row.handle}`;
       const msgTd = document.createElement("td");
-      msgTd.textContent = row.message.length > 55 ? row.message.slice(0, 55) + "…" : row.message;
+      msgTd.textContent = row.message.length > 55 ? row.message.slice(0, 55) + "..." : row.message;
       const gifTd = document.createElement("td");
       const hasGif = ["true", "1", "yes"].includes((row.has_gif ?? "").toLowerCase());
-      gifTd.textContent = hasGif && row.gif_query ? row.gif_query : "—";
+      gifTd.textContent = hasGif && row.gif_query ? row.gif_query : "-";
       tr.appendChild(handleTd);
       tr.appendChild(msgTd);
       tr.appendChild(gifTd);
@@ -352,7 +340,7 @@ function handleCSVFile(file) {
       const td = document.createElement("td");
       td.colSpan = 3;
       td.style.color = "#7a5c3e";
-      td.textContent = `… and ${parsedRows.length - 20} more row(s)`;
+      td.textContent = `... and ${parsedRows.length - 20} more row(s)`;
       tr.appendChild(td);
       csvRowsBody.appendChild(tr);
     }
@@ -362,13 +350,12 @@ function handleCSVFile(file) {
   reader.readAsText(file);
 }
 
-// Step 7: Wire startBatchButton
 startBatchButton.addEventListener("click", async () => {
   if (parsedRows.length === 0) return;
 
   const delaySeconds = Math.max(5, parseInt(delayInput.value, 10) || 400);
   startBatchButton.disabled = true;
-  setStatus(`Batch started — ${parsedRows.length} message(s) queued (delay: ${delaySeconds}s).`);
+    setStatus(`Campaign started - ${parsedRows.length} message(s) queued (delay: ${delaySeconds}s).`);
 
   try {
     const response = await chrome.runtime.sendMessage({
@@ -394,11 +381,10 @@ startBatchButton.addEventListener("click", async () => {
   }
 });
 
-// Step 8: Wire stopBatchButton
 stopBatchButton.addEventListener("click", async () => {
   try {
     await chrome.runtime.sendMessage({ type: "STOP_BATCH" });
-    setStatus("Batch stopped.");
+    setStatus("Campaign stopped.");
     stopBatchButton.disabled = true;
     submitButton.disabled = false;
     stopCountdown();
@@ -411,7 +397,7 @@ scrapeForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   startScrapeButton.disabled = true;
-  setScrapeStatus(`Starting ${activeScrapeSourceType} scrape…`);
+  setScrapeStatus(`Starting ${activeScrapeSourceType} scrape...`);
 
   try {
     const response = await chrome.runtime.sendMessage({
@@ -494,7 +480,6 @@ downloadScrapeButton.addEventListener("click", async () => {
   }
 });
 
-// Countdown timer — reads chrome.alarms + storage directly (no background round-trip)
 let countdownInterval = null;
 
 async function updateCountdown() {
@@ -511,18 +496,18 @@ async function updateCountdown() {
   countdownDisplay.hidden = false;
 
   if (!alarm) {
-    countdownDisplay.textContent = "⏳ Sending…";
+    countdownDisplay.textContent = "Sending...";
     return;
   }
 
   const remaining = Math.max(0, Math.round((alarm.scheduledTime - Date.now()) / 1000));
   const mins = Math.floor(remaining / 60);
   const secs = remaining % 60;
-  const nextHandle = batchQueue[batchIndex]?.handle ?? "—";
+  const nextHandle = batchQueue[batchIndex]?.handle ?? "-";
   const rowNum = batchIndex + 1;
 
   countdownDisplay.textContent =
-    `⏱ Next: @${nextHandle} (row ${rowNum}/${batchQueue.length}) — in ${mins}:${String(secs).padStart(2, "0")}`;
+    `Next: @${nextHandle} (row ${rowNum}/${batchQueue.length}) - in ${mins}:${String(secs).padStart(2, "0")}`;
 }
 
 function startCountdown() {
@@ -552,7 +537,7 @@ function renderScrapeStatus(state = {}) {
   const warningMessage = (cursor.warning || "").trim();
 
   scrapeSummary.textContent =
-    `Status: ${scrapeStatus ?? "idle"} — ${readyCount} ${sourceConfig.statusLabel}(s) ready`;
+    `Status: ${scrapeStatus ?? "idle"} - ${readyCount} ${sourceConfig.statusLabel}(s) ready`;
 
   const cursorParts = [];
   if (cursor.phase) cursorParts.push(`phase: ${cursor.phase}`);
@@ -563,7 +548,7 @@ function renderScrapeStatus(state = {}) {
   if (cursor.totalToEnrich != null) cursorParts.push(`total: ${cursor.totalToEnrich}`);
   if (warningMessage) cursorParts.push(`warning: ${warningMessage}`);
   if (cursor.error) cursorParts.push(`error: ${cursor.error}`);
-  scrapeCursor.textContent = cursorParts.join(" — ") || "No scrape running.";
+  scrapeCursor.textContent = cursorParts.join(" - ") || "No scrape running.";
   scrapeStatusNode.textContent = warningMessage || "Scraper ready.";
   scrapeStatusNode.dataset.state = cursor.error
     ? "error"
@@ -588,7 +573,7 @@ function renderScrapeStatus(state = {}) {
     const text = sourceType === "comments"
       ? (lead.comment_text || "").trim()
       : (lead.name || "").trim();
-    previewTd.textContent = text.length > 80 ? `${text.slice(0, 80)}…` : text || "—";
+    previewTd.textContent = text.length > 80 ? `${text.slice(0, 80)}...` : text || "-";
 
     tr.appendChild(handleTd);
     tr.appendChild(previewTd);
@@ -599,7 +584,7 @@ function renderScrapeStatus(state = {}) {
     const tr = document.createElement("tr");
     const td = document.createElement("td");
     td.colSpan = 2;
-    td.textContent = `… and ${scrapeResults.length - 12} more lead(s)`;
+    td.textContent = `... and ${scrapeResults.length - 12} more lead(s)`;
     td.style.color = "#7a5c3e";
     tr.appendChild(td);
     scrapeResultsBody.appendChild(tr);
@@ -650,148 +635,7 @@ const scrapeStatusInterval = setInterval(() => {
 window.addEventListener("unload", () => {
   stopCountdown();
   stopAutoFetchCountdown();
-  stopCrmCountdown();
   clearInterval(scrapeStatusInterval);
-});
-
-// ── CRM Sync controls ─────────────────────────────────────────
-const crmBadge        = document.getElementById("crm-badge");
-const crmInterval     = document.getElementById("crm-interval");
-const crmToggle       = document.getElementById("crm-toggle");
-const crmCountdown    = document.getElementById("crm-countdown");
-const crmTrigger      = document.getElementById("crm-trigger");
-const crmLogsButton   = document.getElementById("crm-logs-button");
-const crmLastSyncEl   = document.getElementById("crm-last-sync");
-const crmLogsEl       = document.getElementById("crm-logs");
-
-let crmCountdownInterval = null;
-
-async function updateCrmCountdown() {
-  const { crmSyncEnabled = false } = await chrome.storage.local.get("crmSyncEnabled");
-  if (!crmSyncEnabled) { stopCrmCountdown(); return; }
-  const alarm = await new Promise((resolve) => chrome.alarms.get("IG_CRM_SYNC", resolve));
-  crmCountdown.hidden = false;
-  if (!alarm) { crmCountdown.textContent = "⏳ Waiting for first cycle…"; return; }
-  const remaining = Math.max(0, Math.round((alarm.scheduledTime - Date.now()) / 1000));
-  const hours = Math.floor(remaining / 3600);
-  const mins = Math.floor((remaining % 3600) / 60);
-  const secs = remaining % 60;
-  const parts = [];
-  if (hours > 0) parts.push(`${hours}h`);
-  parts.push(`${String(mins).padStart(2, "0")}min`);
-  parts.push(`${String(secs).padStart(2, "0")}s`);
-  crmCountdown.textContent = `⏱ Next CRM sync in ${parts.join(" ")}`;
-}
-
-function startCrmCountdown() {
-  stopCrmCountdown();
-  updateCrmCountdown();
-  crmCountdownInterval = setInterval(updateCrmCountdown, 1000);
-}
-
-function stopCrmCountdown() {
-  if (crmCountdownInterval != null) {
-    clearInterval(crmCountdownInterval);
-    crmCountdownInterval = null;
-  }
-  crmCountdown.hidden = true;
-  crmCountdown.textContent = "";
-}
-
-function renderCrmSync(enabled) {
-  crmBadge.textContent = enabled ? "Active" : "Inactive";
-  crmBadge.dataset.state = enabled ? "active" : "inactive";
-  crmToggle.textContent = enabled ? "Disable" : "Enable";
-  if (enabled) { startCrmCountdown(); } else { stopCrmCountdown(); }
-}
-
-async function loadCrmStatus() {
-  const { crmSyncEnabled = false, crmSyncIntervalHours = 6, crmLastSync, crmLastSyncCount } =
-    await chrome.storage.local.get(["crmSyncEnabled", "crmSyncIntervalHours", "crmLastSync", "crmLastSyncCount"]);
-  crmInterval.value = String(crmSyncIntervalHours);
-  renderCrmSync(crmSyncEnabled);
-  if (crmLastSync) {
-    crmLastSyncEl.hidden = false;
-    crmLastSyncEl.textContent = `Last sync: ${new Date(crmLastSync).toLocaleString()} — ${crmLastSyncCount ?? 0} thread(s)`;
-  }
-}
-
-loadCrmStatus();
-
-crmToggle.addEventListener("click", async () => {
-  const { crmSyncEnabled = false, crmWebhookUrl = "https://n8n.srv765660.hstgr.cloud/webhook/8472dc92-a513-4739-bc7a-0261e2e71b00" } =
-    await chrome.storage.local.get(["crmSyncEnabled", "crmWebhookUrl"]);
-  const next = !crmSyncEnabled;
-  const hours = parseFloat(crmInterval.value);
-
-  if (next && !crmWebhookUrl) {
-    setStatus("Configure the CRM webhook URL in Settings (⚙) first.", "error");
-    return;
-  }
-
-  await chrome.storage.local.set({ crmSyncEnabled: next, crmSyncIntervalHours: hours });
-
-  if (next) {
-    chrome.alarms.create("IG_CRM_SYNC", { periodInMinutes: hours * 60 });
-  } else {
-    await chrome.alarms.clear("IG_CRM_SYNC");
-  }
-
-  renderCrmSync(next);
-});
-
-crmInterval.addEventListener("change", async () => {
-  const hours = parseFloat(crmInterval.value);
-  await chrome.storage.local.set({ crmSyncIntervalHours: hours });
-  const { crmSyncEnabled = false } = await chrome.storage.local.get("crmSyncEnabled");
-  if (crmSyncEnabled) {
-    await chrome.alarms.clear("IG_CRM_SYNC");
-    chrome.alarms.create("IG_CRM_SYNC", { periodInMinutes: hours * 60 });
-  }
-});
-
-crmTrigger.addEventListener("click", async () => {
-  crmTrigger.disabled = true;
-  crmTrigger.textContent = "⏳ Syncing…";
-  crmBadge.textContent = "Sync…";
-  crmBadge.dataset.state = "loading";
-  setStatus("Opening Instagram DMs for CRM sync…");
-  try {
-    const response = await chrome.runtime.sendMessage({ type: "TRIGGER_CRM_SYNC" });
-    if (!response?.ok) {
-      setStatus(response?.error ?? "CRM sync failed.", "error");
-    } else {
-      setStatus("CRM sync triggered — check CRM logs for results.", "success");
-    }
-  } catch (error) {
-    setStatus(error.message ?? "Error.", "error");
-  } finally {
-    crmTrigger.disabled = false;
-    crmTrigger.textContent = "▶ Trigger now";
-    const { crmSyncEnabled = false } = await chrome.storage.local.get("crmSyncEnabled");
-    renderCrmSync(crmSyncEnabled);
-    // Refresh last sync info
-    const { crmLastSync, crmLastSyncCount } =
-      await chrome.storage.local.get(["crmLastSync", "crmLastSyncCount"]);
-    if (crmLastSync) {
-      crmLastSyncEl.hidden = false;
-      crmLastSyncEl.textContent = `Last sync: ${new Date(crmLastSync).toLocaleString()} — ${crmLastSyncCount ?? 0} thread(s)`;
-    }
-  }
-});
-
-crmLogsButton.addEventListener("click", async () => {
-  try {
-    const response = await chrome.runtime.sendMessage({ type: "GET_CRM_LOGS" });
-    if (!response?.ok) { setStatus(response?.error ?? "Could not load CRM logs.", "error"); return; }
-    const lines = response.logs.length
-      ? response.logs.map((e) => `${e.at} ${e.message}`)
-      : ["No CRM logs yet."];
-    crmLogsEl.hidden = false;
-    crmLogsEl.textContent = lines.join("\n");
-  } catch (error) {
-    setStatus(error.message ?? "Could not load CRM logs.", "error");
-  }
 });
 
 // ── Auto-fetch controls ────────────────────────────────────────
@@ -802,7 +646,7 @@ async function updateAutoFetchCountdown() {
   if (!autoFetchEnabled) { stopAutoFetchCountdown(); return; }
   const alarm = await new Promise((resolve) => chrome.alarms.get("IG_AUTO_FETCH", resolve));
   autofetchCountdown.hidden = false;
-  if (!alarm) { autofetchCountdown.textContent = "⏳ Waiting for first cycle…"; return; }
+  if (!alarm) { autofetchCountdown.textContent = "Waiting for first cycle..."; return; }
   const remaining = Math.max(0, Math.round((alarm.scheduledTime - Date.now()) / 1000));
   const hours = Math.floor(remaining / 3600);
   const mins = Math.floor((remaining % 3600) / 60);
@@ -811,7 +655,7 @@ async function updateAutoFetchCountdown() {
   if (hours > 0) parts.push(`${hours}h`);
   parts.push(`${String(mins).padStart(2, "0")}min`);
   parts.push(`${String(secs).padStart(2, "0")}s`);
-  autofetchCountdown.textContent = `⏱ Next fetch in ${parts.join(" ")}`;
+  autofetchCountdown.textContent = `Next fetch in ${parts.join(" ")}`;
 }
 
 function startAutoFetchCountdown() {
@@ -879,22 +723,22 @@ autofetchInterval.addEventListener("change", async () => {
 
 autofetchTrigger.addEventListener("click", async () => {
   autofetchTrigger.disabled = true;
-  autofetchTrigger.textContent = "⏳ Fetching…";
-  autofetchBadge.textContent = "Fetch…";
+  autofetchTrigger.textContent = "Fetching...";
+  autofetchBadge.textContent = "Fetch";
   autofetchBadge.dataset.state = "loading";
-  setStatus("Fetching from endpoint…");
+  setStatus("Fetching from endpoint...");
   try {
     const response = await chrome.runtime.sendMessage({ type: "TRIGGER_AUTO_FETCH" });
     if (!response?.ok) {
       setStatus(response?.error ?? "Fetch failed.", "error");
     } else {
-      setStatus("Fetch complete — batch started if rows were found.", "success");
+      setStatus("Fetch complete - campaign started if rows were found.", "success");
     }
   } catch (error) {
     setStatus(error.message ?? "Error.", "error");
   } finally {
     autofetchTrigger.disabled = false;
-    autofetchTrigger.textContent = "▶ Trigger now";
+    autofetchTrigger.textContent = "Fetch now";
     const { autoFetchEnabled = false } = await chrome.storage.local.get("autoFetchEnabled");
     renderAutoFetch(autoFetchEnabled);
   }

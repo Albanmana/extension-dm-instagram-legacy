@@ -3,13 +3,16 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Settings — Instagram Follow-Up</title>
+    <title>Settings - Instagram DM Studio</title>
     <link rel="stylesheet" href="popup.css" />
     <link rel="stylesheet" href="settings.css" />
   </head>
   <body>
     <main class="app settings-app">
-      <h1>Settings</h1>
+      <header class="settings-header">
+        <p class="eyebrow">Instagram automation</p>
+        <h1>Settings</h1>
+      </header>
 
       <section class="settings-section">
         <h2 class="section-title">Auto-fetch CSV</h2>
@@ -57,38 +60,8 @@
       </section>
 
       <section class="settings-section">
-        <h2 class="section-title">CRM Sync</h2>
-        <div class="form">
-          <label class="field">
-            <span>CRM Webhook URL</span>
-            <input id="crm-url" type="url" placeholder="https://your-n8n.com/webhook/crm-sync" autocomplete="off" />
-          </label>
-        </div>
-      </section>
-
-      <section class="settings-section">
-        <h2 class="section-title">CRM API Key <code class="header-hint">x-api-key</code></h2>
-
-        <div id="crm-apikey-entry" class="form">
-          <label class="field">
-            <span>API Key</span>
-            <input id="crm-apikey-input" type="password" placeholder="Enter your CRM API key" autocomplete="off" />
-          </label>
-          <button id="crm-apikey-save" type="button">Save</button>
-        </div>
-
-        <div id="crm-apikey-saved" class="apikey-saved" hidden>
-          <span class="apikey-mask">●●●●●●●●●●●●●●●●</span>
-          <div class="apikey-actions">
-            <button id="crm-apikey-replace" type="button" class="secondary-button">Replace</button>
-            <button id="crm-apikey-delete" type="button" class="danger-button">Delete</button>
-          </div>
-        </div>
-      </section>
-
-      <section class="settings-section">
         <h2 class="section-title">Mark Done Webhook</h2>
-        <p class="section-desc">Called after each CSV row is sent successfully to date your CRM.</p>
+        <p class="section-desc">Called after each CSV row is sent successfully.</p>
         <div class="form">
           <label class="field">
             <span>Endpoint URL</span>

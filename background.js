@@ -1,5 +1,4 @@
 // ── Defaults (from .env) ─────────────────────────────────────
-const DEFAULT_CRM_UPDATE_URL = "https://n8n.srv765660.hstgr.cloud/webhook/8472dc92-a513-4739-bc7a-0261e2e71b00";
 const DEFAULT_AUTO_FETCH_URL = "https://n8n.srv765660.hstgr.cloud/webhook/ada824b2-daf0-4209-b302-38cbcce1e57e";
 const DEFAULT_MARK_DONE_URL  = "https://n8n.srv765660.hstgr.cloud/webhook/405003b5-07bb-47bf-a087-15714542fd31";
 const DEFAULT_BATCH_DELAY    = 400;
@@ -416,7 +415,7 @@ async function sendTestMessage({ handle, message, has_gif, gif_query }) {
         ).catch(() => null);
 
         if (pickerBtn) {
-          sendLog("gif", "Step 1/3: opening sticker/GIF picker.");
+          sendLog("gif", "Opening sticker/GIF picker.");
           pickerBtn.click();
           await delay(800);
 
@@ -430,14 +429,14 @@ async function sendTestMessage({ handle, message, has_gif, gif_query }) {
               ?? null;
 
             if (gifTab) {
-              sendLog("gif", "Step 2/3: switching to the GIPHY tab.");
+              sendLog("gif", "Switching to the GIPHY tab.");
               gifTab.click();
               await delay(600);
             } else {
               sendLog("gif", `No visible GIF tab found. Visible tabs: ${gifTabs.map((tab) => normalize(tab.textContent) || "<icon-only>").join(" | ")}`);
             }
           } else {
-            sendLog("gif", "Step 2/3: GIPHY tab already open.");
+            sendLog("gif", "GIPHY tab already open.");
           }
 
           searchInput = await waitFor(
@@ -447,7 +446,7 @@ async function sendTestMessage({ handle, message, has_gif, gif_query }) {
           ).catch(() => null);
 
           if (searchInput) {
-            sendLog("gif", "Step 3/3: filling the GIPHY search input.");
+            sendLog("gif", "Filling the GIPHY search input.");
             searchInput.focus();
             searchInput.click();
             searchInput.select?.();
@@ -834,7 +833,7 @@ async function sendTestMessage({ handle, message, has_gif, gif_query }) {
             const pickerBtn = await waitFor(findGifPickerButton, "GIF picker button", 5000).catch(() => null);
 
             if (pickerBtn) {
-              sendLog("gif", "Step 1/3: opening sticker/GIF picker.");
+              sendLog("gif", "Opening sticker/GIF picker.");
               pickerBtn.click();
               await delay(800);
 
@@ -848,20 +847,20 @@ async function sendTestMessage({ handle, message, has_gif, gif_query }) {
                   ?? null;
 
                 if (gifTab) {
-                  sendLog("gif", "Step 2/3: switching to the GIPHY tab.");
+                  sendLog("gif", "Switching to the GIPHY tab.");
                   gifTab.click();
                   await delay(600);
                 } else {
                   sendLog("gif", `No visible GIF tab found. Visible tabs: ${gifTabs.map((tab) => normalize(tab.textContent) || "<icon-only>").join(" | ")}`);
                 }
               } else {
-                sendLog("gif", "Step 2/3: GIPHY tab already open.");
+                sendLog("gif", "GIPHY tab already open.");
               }
 
               searchInput = await waitFor(findGifSearchInput, "GIPHY search input", 5000).catch(() => null);
 
               if (searchInput) {
-                sendLog("gif", "Step 3/3: filling the GIPHY search input.");
+                sendLog("gif", "Filling the GIPHY search input.");
                 searchInput.focus();
                 searchInput.click();
                 searchInput.select?.();
@@ -1336,13 +1335,6 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     }
     return;
   }
-  if (alarm.name === "IG_CRM_SYNC") {
-    try {
-      await runCrmSync();
-    } catch (error) {
-      await appendCrmLog(`Error: ${error.message}`);
-    }
-  }
 });
 
 // Re-register alarms after Chrome restarts (alarms persist but being explicit is safer)
@@ -1350,24 +1342,14 @@ chrome.runtime.onStartup.addListener(async () => {
   const {
     autoFetchEnabled,
     autoFetchIntervalHours = 3,
-    crmSyncEnabled,
-    crmSyncIntervalHours = 6,
   } = await chrome.storage.local.get([
     "autoFetchEnabled", "autoFetchIntervalHours",
-    "crmSyncEnabled", "crmSyncIntervalHours",
   ]);
 
   if (autoFetchEnabled) {
     const existing = await new Promise((resolve) => chrome.alarms.get("IG_AUTO_FETCH", resolve));
     if (!existing) {
       chrome.alarms.create("IG_AUTO_FETCH", { periodInMinutes: autoFetchIntervalHours * 60 });
-    }
-  }
-
-  if (crmSyncEnabled) {
-    const existing = await new Promise((resolve) => chrome.alarms.get("IG_CRM_SYNC", resolve));
-    if (!existing) {
-      chrome.alarms.create("IG_CRM_SYNC", { periodInMinutes: crmSyncIntervalHours * 60 });
     }
   }
 });
@@ -2723,142 +2705,6 @@ async function runAutoFetch(forceRun = false) {
   await processBatchItem(0);
 }
 
-// ── CRM Sync ──────────────────────────────────────────────────
-
-let crmSyncPendingTabId = null;
-let crmSyncPendingTimeout = null;
-
-async function runCrmSync(forceRun = false) {
-  const { crmSyncEnabled, crmWebhookUrl = DEFAULT_CRM_UPDATE_URL } =
-    await chrome.storage.local.get(["crmSyncEnabled", "crmWebhookUrl"]);
-  if (!crmWebhookUrl) throw new Error("No CRM webhook URL configured in Settings.");
-  if (!forceRun && !crmSyncEnabled) return;
-
-  await appendCrmLog("Starting CRM sync — opening Instagram DMs…");
-  await chrome.storage.local.set({ crmSyncRequestedAt: Date.now() });
-
-  // crm-hook.js (MAIN world content script) is always pre-installed via manifest
-  // so no executeScript needed here — just open the tab and wait for postMessage
-  const tab = await chrome.tabs.create({ url: "https://www.instagram.com/direct/", active: true });
-  crmSyncPendingTabId = tab.id;
-  await appendCrmLog(`[debug] Tab created: id=${tab.id} status=${tab.status}`);
-
-  if (crmSyncPendingTimeout) clearTimeout(crmSyncPendingTimeout);
-  crmSyncPendingTimeout = setTimeout(async () => {
-    if (crmSyncPendingTabId != null) {
-      chrome.tabs.remove(crmSyncPendingTabId).catch(() => {});
-      crmSyncPendingTabId = null;
-    }
-    await chrome.storage.local.set({ crmSyncRequestedAt: 0 });
-    await appendCrmLog("Timeout — no data received from Instagram within 30s.");
-  }, 30000);
-}
-
-async function processCrmData(rawData) {
-  const edges = rawData?.data
-    ?.get_slide_mailbox_for_iris_subscription
-    ?.threads_by_system_folder_and_ig_inbox_folder
-    ?.edges;
-
-  if (!Array.isArray(edges)) throw new Error("Unexpected Instagram response structure.");
-
-  await appendCrmLog(`Received ${edges.length} thread(s) from Instagram.`);
-
-  const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
-  const myFbid = edges[0]?.node?.as_ig_direct_thread?.viewer?.interop_messaging_user_fbid ?? null;
-
-  let skippedUnread = 0;
-  let skippedOld = 0;
-  const results = [];
-
-  for (const edge of edges) {
-    const thread = edge?.node?.as_ig_direct_thread;
-    if (!thread) continue;
-
-    if (thread.marked_as_unread) { skippedUnread++; continue; }
-
-    const lastActivity = parseInt(thread.last_activity_timestamp_ms, 10);
-    if (lastActivity < thirtyDaysAgo) { skippedOld++; continue; }
-
-    const username = thread.users?.[0]?.username;
-    if (!username) continue;
-
-    const lastMsgNode = thread.slide_messages?.edges?.[0]?.node;
-    const sentByMe = myFbid != null && lastMsgNode?.sender_fbid === myFbid;
-
-    results.push({
-      handle: username,
-      thread_key: thread.thread_key,
-      last_activity_ms: lastActivity,
-      last_message_sent_by_me: sentByMe,
-      last_message_preview: lastMsgNode?.igd_snippet ?? "",
-      last_message_text: lastMsgNode?.text_body ?? "",
-      last_message_timestamp_ms: lastMsgNode?.timestamp_ms
-        ? parseInt(lastMsgNode.timestamp_ms, 10)
-        : null,
-    });
-  }
-
-  await appendCrmLog(
-    `Filtered: ${results.length} thread(s) to sync (skipped ${skippedUnread} unread, ${skippedOld} too old).`
-  );
-
-  if (results.length === 0) {
-    await appendCrmLog("Nothing to send to CRM.");
-    return;
-  }
-
-  const { crmWebhookUrl = DEFAULT_CRM_UPDATE_URL } = await chrome.storage.local.get("crmWebhookUrl");
-  const crmApiKey = await getDecryptedCrmApiKey();
-  const headers = { "Content-Type": "application/json" };
-  if (crmApiKey) headers["x-api-key"] = crmApiKey;
-
-  const response = await fetch(crmWebhookUrl, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ threads: results, synced_at: new Date().toISOString() }),
-  });
-
-  if (!response.ok) throw new Error(`CRM webhook returned ${response.status}`);
-
-  await appendCrmLog(`Sent ${results.length} thread(s) to CRM. Status: ${response.status}.`);
-  await chrome.storage.local.set({
-    crmLastSync: new Date().toISOString(),
-    crmLastSyncCount: results.length,
-  });
-}
-
-async function appendCrmLog(message) {
-  const { crmLogs = [] } = await chrome.storage.local.get("crmLogs");
-  const next = [...crmLogs, { at: new Date().toISOString(), message }].slice(-100);
-  await chrome.storage.local.set({ crmLogs: next });
-  console.log(`[IG Follow-Up][crm] ${message}`);
-}
-
-async function getCrmLogs() {
-  const { crmLogs = [] } = await chrome.storage.local.get("crmLogs");
-  return crmLogs;
-}
-
-async function getDecryptedCrmApiKey() {
-  const { crmApiKeyEncrypted, crmApiKeyIv, crmApiKeyCryptoKey } =
-    await chrome.storage.local.get(["crmApiKeyEncrypted", "crmApiKeyIv", "crmApiKeyCryptoKey"]);
-  if (!crmApiKeyEncrypted || !crmApiKeyIv || !crmApiKeyCryptoKey) return DEFAULT_N8N_API_KEY;
-  try {
-    const cryptoKey = await crypto.subtle.importKey(
-      "raw", base64ToBuf(crmApiKeyCryptoKey), { name: "AES-GCM" }, false, ["decrypt"]
-    );
-    const decrypted = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv: base64ToBuf(crmApiKeyIv) },
-      cryptoKey,
-      base64ToBuf(crmApiKeyEncrypted)
-    );
-    return new TextDecoder().decode(decrypted);
-  } catch {
-    return null;
-  }
-}
-
 async function callMarkDone(row) {
   const { markDoneUrl = DEFAULT_MARK_DONE_URL } = await chrome.storage.local.get("markDoneUrl");
   if (!markDoneUrl) return;
@@ -2997,56 +2843,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ ok: false, error: error.message });
       }
     })();
-    return true;
-  }
-
-  return false;
-});
-
-chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type === "CRM_INBOX_DATA") {
-    (async () => {
-      try {
-        const { crmSyncRequestedAt = 0 } = await chrome.storage.local.get("crmSyncRequestedAt");
-        if (Date.now() - crmSyncRequestedAt > 60000) {
-          sendResponse({ ok: false, error: "No CRM sync pending." });
-          return;
-        }
-        await chrome.storage.local.set({ crmSyncRequestedAt: 0 });
-        if (crmSyncPendingTimeout != null) {
-          clearTimeout(crmSyncPendingTimeout);
-          crmSyncPendingTimeout = null;
-        }
-        await processCrmData(message.data);
-        if (crmSyncPendingTabId != null) {
-          chrome.tabs.remove(crmSyncPendingTabId).catch(() => {});
-          crmSyncPendingTabId = null;
-        }
-        sendResponse({ ok: true });
-      } catch (error) {
-        await appendCrmLog(`Processing error: ${error.message}`);
-        sendResponse({ ok: false, error: error.message });
-      }
-    })();
-    return true;
-  }
-
-  if (message?.type === "TRIGGER_CRM_SYNC") {
-    (async () => {
-      try {
-        await runCrmSync(true);
-        sendResponse({ ok: true });
-      } catch (error) {
-        sendResponse({ ok: false, error: error.message });
-      }
-    })();
-    return true;
-  }
-
-  if (message?.type === "GET_CRM_LOGS") {
-    getCrmLogs()
-      .then((logs) => sendResponse({ ok: true, logs }))
-      .catch((error) => sendResponse({ ok: false, error: error.message }));
     return true;
   }
 
