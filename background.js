@@ -1,3 +1,5 @@
+importScripts("scrape-target.js");
+
 // ── Defaults (from .env) ─────────────────────────────────────
 const DEFAULT_AUTO_FETCH_URL = "https://n8n.srv765660.hstgr.cloud/webhook/ada824b2-daf0-4209-b302-38cbcce1e57e";
 const DEFAULT_MARK_DONE_URL  = "https://n8n.srv765660.hstgr.cloud/webhook/405003b5-07bb-47bf-a087-15714542fd31";
@@ -1118,23 +1120,14 @@ function normalizeInstagramProfileTarget(rawValue) {
 }
 
 function normalizePostUrl(rawUrl) {
-  let parsed;
   try {
-    parsed = new URL(String(rawUrl || "").trim());
-  } catch {
+    return globalThis.InstagramScrapeTarget.normalizeMediaUrl(rawUrl);
+  } catch (error) {
+    if (error.message === "Invalid URL") {
     throw new Error("Invalid post URL.");
+    }
+    throw error;
   }
-
-  if (!/instagram\.com$/i.test(parsed.hostname) && !/instagram\.com$/i.test(parsed.hostname.replace(/^www\./i, ""))) {
-    throw new Error("The post URL must be an Instagram URL.");
-  }
-
-  const segments = parsed.pathname.split("/").filter(Boolean);
-  if (segments.length < 2 || !["p", "reel", "tv"].includes(segments[0])) {
-    throw new Error("The URL must point to an Instagram post or reel.");
-  }
-
-  return `https://www.instagram.com/${segments[0]}/${segments[1]}/`;
 }
 
 function buildScrapeFilters(input = {}) {
@@ -1790,71 +1783,42 @@ async function openTabAndWait(url, active = false) {
   return tab;
 }
 
-async function drivePostPageForComments(tabId) {
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    func: async () => {
-      const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-      const normalize = (value) => String(value || "").toLowerCase().replace(/\s+/g, " ").trim();
-      const isVisible = (element) => {
-        if (!(element instanceof HTMLElement)) return false;
-        const rect = element.getBoundingClientRect();
-        return rect.width > 0 && rect.height > 0;
-      };
-      const isScrollable = (element) => {
-        if (!(element instanceof HTMLElement)) return false;
-        const style = window.getComputedStyle(element);
-        return /(auto|scroll)/i.test(style.overflowY || "") && element.scrollHeight > element.clientHeight + 120;
-      };
-
-      const clickMatchingButton = (tokens) => {
-        const candidates = Array.from(document.querySelectorAll("button, div[role='button'], a[role='button']"));
-        const button = candidates.find((candidate) => {
-          const label = normalize(candidate.textContent || candidate.getAttribute("aria-label") || candidate.getAttribute("title"));
-          return isVisible(candidate) && tokens.some((token) => label.includes(token));
-        });
-        if (button) button.click();
-        return Boolean(button);
-      };
-
-      const findCommentsScroller = () => {
-        const permalink = document.querySelector("a[href*='/p/'][href*='/c/']");
-        if (permalink) {
-          let current = permalink.parentElement;
-          while (current) {
-            if (isScrollable(current)) return current;
-            current = current.parentElement;
-          }
-        }
-
-        return Array.from(document.querySelectorAll("div, section, main, article")).find(isScrollable) || document.scrollingElement || document.documentElement;
-      };
-
-      window.scrollTo({ top: 0, behavior: "instant" });
-      await delay(900);
-
-      const scroller = findCommentsScroller();
-
-      for (let index = 0; index < 18; index += 1) {
-        clickMatchingButton([
-          "more comments",
-          "voir plus de commentaires",
-          "view all comments",
-          "load more comments",
-          "load more",
-          "plus de commentaires",
-        ]);
-        if (scroller instanceof HTMLElement) {
-          scroller.scrollTop = scroller.scrollHeight;
-        } else {
-          window.scrollBy({ top: 900, behavior: "instant" });
-        }
-        await delay(1200);
-      }
-
-      window.scrollTo({ top: 0, behavior: "instant" });
-    },
-  });
+async function drivePostPageForComments(tabId, postUrl) {
+  const target = { tabId };
+  await chrome.debugger.attach(target, "1.3");
+  try {
+    let clickTarget = null;
+    for (let attempt = 1; attempt <= 12; attempt += 1) {
+      const evaluated = await chrome.debugger.sendCommand(target, "Runtime.evaluate", {
+        returnByValue: true,
+        expression: `(() => {
+          const normalize = (value) => String(value || "").toLowerCase().replace(/\\s+/g, " ").trim();
+          const visible = (el) => { const rect = el.getBoundingClientRect(); return rect.width > 0 && rect.height > 0; };
+          const button = Array.from(document.querySelectorAll("button, div[role='button']")).find((el) => {
+            const accessibleLabel = normalize(el.getAttribute("aria-label") || el.getAttribute("title"));
+            const iconLabel = normalize(el.querySelector("[aria-label], [title]")?.getAttribute("aria-label") || el.querySelector("[title]")?.getAttribute("title"));
+            return visible(el) && /^(comment|commenter|commentaire|commentaires)\\b/.test(accessibleLabel || iconLabel);
+          });
+          if (!button) return null;
+          const rect = button.getBoundingClientRect();
+          return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2, label: button.getAttribute("aria-label") || button.textContent || "" };
+        })()`,
+      });
+      clickTarget = evaluated?.result?.value;
+      if (clickTarget && Number.isFinite(clickTarget.x) && Number.isFinite(clickTarget.y)) break;
+      await delay(500);
+    }
+    if (!clickTarget || clickTarget.error || !Number.isFinite(clickTarget.x) || !Number.isFinite(clickTarget.y)) {
+      throw new Error("Timed out waiting for the Reel comments button.");
+    }
+    await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", { type: "mouseMoved", x: clickTarget.x, y: clickTarget.y });
+    await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", { type: "mousePressed", x: clickTarget.x, y: clickTarget.y, button: "left", clickCount: 1 });
+    await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", { type: "mouseReleased", x: clickTarget.x, y: clickTarget.y, button: "left", clickCount: 1 });
+    await delay(500);
+    return { clickedLabel: clickTarget.label, requestedPostUrl: postUrl };
+  } finally {
+    await chrome.debugger.detach(target).catch(() => {});
+  }
 }
 
 async function fallbackCollectCommentsFromDom(tabId, postUrl) {
@@ -1868,7 +1832,9 @@ async function fallbackCollectCommentsFromDom(tabId, postUrl) {
       const isRelativeDate = (value) => /^\d+\s*(s|sec|min|h|d|j|w|sem|sem\.|wk|mo)$/i.test(value);
       const items = [];
       const seenPermalinks = new Set();
-      const permalinkLinks = Array.from(document.querySelectorAll("a[href*='/p/'][href*='/c/']"));
+      const requestedShortcode = new URL(currentPostUrl).pathname.split("/").filter(Boolean)[1];
+      const permalinkLinks = Array.from(document.querySelectorAll("a[href*='/p/'][href*='/c/']"))
+        .filter((link) => new URL(link.href, location.origin).pathname.includes(`/p/${requestedShortcode}/c/`));
 
       permalinkLinks.forEach((permalinkLink) => {
         const permalink = permalinkLink.href;
@@ -1962,6 +1928,106 @@ async function fallbackCollectCommentsFromDom(tabId, postUrl) {
     await appendScrapeLog(`DOM collection script error: ${result.error.message ?? JSON.stringify(result.error)}`);
   }
   return result?.result ?? { items: [], debug: { permalinkCount: 0, itemCount: 0, bodyTextLength: 0 } };
+}
+
+async function scrollCommentsPanel(tabId, postUrl) {
+  const target = { tabId };
+  await chrome.debugger.attach(target, "1.3");
+  try {
+    const shortcode = new URL(postUrl).pathname.split("/").filter(Boolean)[1];
+    const evaluated = await chrome.debugger.sendCommand(target, "Runtime.evaluate", {
+      returnByValue: true,
+      expression: `(() => {
+        const shortcode = ${JSON.stringify(shortcode)};
+        const visible = (el) => {
+          const rect = el.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0;
+        };
+        const scrollable = (el) => {
+          const style = getComputedStyle(el);
+          return visible(el) && /(auto|scroll)/i.test(style.overflowY || "") && el.scrollHeight > el.clientHeight + 24;
+        };
+        const commentLink = Array.from(document.querySelectorAll("a[href*='/p/'][href*='/c/']"))
+          .find((link) => new URL(link.href, location.origin).pathname.includes("/p/" + shortcode + "/c/"));
+        let panel = commentLink;
+        let ancestorCount = 0;
+        while (panel && !scrollable(panel)) panel = panel.parentElement;
+        if (!panel) {
+          let candidate = commentLink;
+          while (candidate) {
+            ancestorCount += 1;
+            candidate = candidate.parentElement;
+          }
+          return { found: false, reason: "no-scrollable-comment-ancestor", ancestorCount };
+        }
+        const rect = panel.getBoundingClientRect();
+        return {
+          found: true,
+          x: rect.left + rect.width / 2,
+          y: rect.top + Math.min(rect.height / 2, 120),
+          clientHeight: panel.clientHeight,
+          scrollHeight: panel.scrollHeight,
+        };
+      })()`,
+    });
+    const panel = evaluated?.result?.value;
+    if (!panel?.found || !Number.isFinite(panel.x) || !Number.isFinite(panel.y)) return panel || { found: false, reason: "panel-evaluation-failed" };
+    await chrome.debugger.sendCommand(target, "Input.dispatchMouseEvent", {
+      type: "mouseWheel",
+      x: panel.x,
+      y: panel.y,
+      deltaX: 0,
+      deltaY: Math.max(480, panel.clientHeight * 0.85),
+    });
+    const scripted = await chrome.debugger.sendCommand(target, "Runtime.evaluate", {
+      returnByValue: true,
+      expression: `(() => {
+        const shortcode = ${JSON.stringify(shortcode)};
+        const scrollable = (el) => {
+          const style = getComputedStyle(el);
+          const rect = el.getBoundingClientRect();
+          return rect.width > 0 && rect.height > 0 && /(auto|scroll)/i.test(style.overflowY || "") && el.scrollHeight > el.clientHeight + 24;
+        };
+        const commentLink = Array.from(document.querySelectorAll("a[href*='/p/'][href*='/c/']"))
+          .find((link) => new URL(link.href, location.origin).pathname.includes("/p/" + shortcode + "/c/"));
+        let panel = commentLink;
+        while (panel && !scrollable(panel)) panel = panel.parentElement;
+        if (!panel) return { moved: false };
+        const before = panel.scrollTop;
+        panel.scrollBy({ top: Math.max(480, panel.clientHeight * 0.85), behavior: "instant" });
+        return { moved: panel.scrollTop !== before, before, after: panel.scrollTop };
+      })()`,
+    });
+    return { found: true, ...scripted?.result?.value };
+  } finally {
+    await chrome.debugger.detach(target).catch(() => {});
+  }
+}
+
+async function collectCommentBatches(tabId, postUrl, maxLeads) {
+  const byUsername = new Map();
+  const maxAttempts = Math.min(120, Math.max(4, Math.ceil(maxLeads / 5) * 2));
+  let stalledBatches = 0;
+
+  for (let attempt = 1; attempt <= maxAttempts && byUsername.size < maxLeads; attempt += 1) {
+    const payload = await fallbackCollectCommentsFromDom(tabId, postUrl);
+    const beforeCount = byUsername.size;
+    for (const item of payload.items || []) {
+      if (item?.username && !byUsername.has(item.username)) byUsername.set(item.username, item);
+      if (byUsername.size >= maxLeads) break;
+    }
+
+    if (byUsername.size >= maxLeads) break;
+    stalledBatches = byUsername.size > beforeCount ? 0 : stalledBatches + 1;
+    if (stalledBatches >= 3) break;
+
+    const scrollResult = await scrollCommentsPanel(tabId, postUrl);
+    await appendScrapeLog(`Comment batch ${attempt}: ${byUsername.size} unique commenter(s); scroll ${JSON.stringify(scrollResult)}.`);
+    if (!scrollResult.found) break;
+    await delay(900);
+  }
+
+  return Array.from(byUsername.values()).slice(0, maxLeads);
 }
 
 function resolveProfileWaiter(username, profile) {
@@ -2403,7 +2469,7 @@ async function enrichLead(lead, index, total) {
   };
 }
 
-async function collectCommentsForScrape(postUrl) {
+async function collectCommentsForScrape(postUrl, maxLeads) {
   const tab = await openTabAndWait(postUrl, true);
   if (!activeScrapeRuntime) throw new Error("Scrape stopped.");
 
@@ -2411,25 +2477,14 @@ async function collectCommentsForScrape(postUrl) {
   await setScrapeCursor({ phase: "collecting", collectedCount: 0, enrichedCount: 0 });
   await appendScrapeLog("Post tab opened. Waiting for Instagram comment payloads…");
 
-  await drivePostPageForComments(tab.id);
-  await delay(2500);
-
-  let domPayload = { items: [], debug: { permalinkCount: 0, itemCount: 0, bodyTextLength: 0 } };
-  for (let attempt = 1; attempt <= 8; attempt += 1) {
-    domPayload = await fallbackCollectCommentsFromDom(tab.id, postUrl);
-    if (domPayload.items.length > 0 || domPayload.debug.permalinkCount > 0) {
-      break;
-    }
-    await appendScrapeLog(`DOM probe ${attempt}/8: 0 permalink found, retrying…`);
-    await delay(1000);
-  }
-
-  const domLeads = domPayload.items;
+  const driveResult = await drivePostPageForComments(tab.id, postUrl);
   await appendScrapeLog(
-    `DOM collection captured ${domLeads.length} visible commenter(s) ` +
-    `(permalinks: ${domPayload.debug.permalinkCount}, bodyTextLength: ${domPayload.debug.bodyTextLength}, ` +
-    `url: ${domPayload.debug.pageUrl}, title: ${domPayload.debug.pageTitle}).`
+    `Clicked Reel comments control: ${String(driveResult.clickedLabel).trim() || "unknown"}.`
   );
+  await delay(5000);
+
+  const domLeads = await collectCommentBatches(tab.id, postUrl, maxLeads);
+  await appendScrapeLog(`DOM collection captured ${domLeads.length} commenter(s) across visible comment batches.`);
 
   const networkLeads = Array.from(activeScrapeRuntime.collectedLeadsByUsername.values());
   if (networkLeads.length) {
@@ -2555,7 +2610,7 @@ async function runScrapeJob(payload) {
 
   try {
     const rawLeads = filters.sourceType === "comments"
-      ? await collectCommentsForScrape(filters.postUrl)
+      ? await collectCommentsForScrape(filters.postUrl, filters.maxLeads)
       : await collectProfileListForScrape(filters.postUrl, filters.sourceType, filters.maxLeads);
     ensureScrapeNotStopped();
 
